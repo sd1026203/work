@@ -403,7 +403,7 @@ Profile和Maven中的Profile类似,区分环境用的.
 		}
 	}
 ```
-
+#### 解析配置文件属性
 首先分析parseBeanDefinitionElement(Element ele), 它是parseBeanDefinitionElement(Element ele, BeanDefinition containingBean)的重载, containingBean参数传值为null;
 ```java
 	public BeanDefinitionHolder parseBeanDefinitionElement(Element ele, BeanDefinition containingBean) {
@@ -536,8 +536,8 @@ Profile和Maven中的Profile类似,区分环境用的.
 		return null;
 	}
 ```
-#### 创建用于承载属性的BeanDefinition
-AbstractBeanDefinition bd = createBeanDefinition(className, parent)中的实际代码为:
+
+创建用于承载属性的BeanDefinition, AbstractBeanDefinition bd = createBeanDefinition(className, parent)中的实际代码为:
 ```java
 	public static AbstractBeanDefinition createBeanDefinition(
 			String parentName, String className, ClassLoader classLoader) throws ClassNotFoundException {
@@ -781,3 +781,4 @@ public Object parsePropertyValue(Element ele, BeanDefinition bd, String property
 		}
 	}
 ```
+spring支持的子元素已经全部在上面处理了.
