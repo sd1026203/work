@@ -1,9 +1,9 @@
 ---
-title: BeanFactory与ApplicationContext
+title: BeanFactory中Bean标签的解析及注册
 tags: spring
 categories: "spring"
 date: 2017-04-26
-filename: spring/beanFactoryAndApplicationContext.md
+filename: spring/beanFactory_bean_analysis_register.md
 ---
 # BeanFactory
 BeanFactory 是 Spring 的“心脏”。它就是 Spring IoC 容器的真面目。Spring 使用 BeanFactory 来实例化、配置和管理 Bean。
@@ -389,9 +389,11 @@ Profile和Maven中的Profile类似,区分环境用的.
 	//比如class, name, id, alias之类等等.
 		BeanDefinitionHolder bdHolder = delegate.parseBeanDefinitionElement(ele);
 		if (bdHolder != null) {
+		    //若存在默认标签的子节点下再有自定义属性, 还需要再次对自定义标签进行解析
 			bdHolder = delegate.decorateBeanDefinitionIfRequired(ele, bdHolder);
 			try {
 				// Register the final decorated instance.
+				//解析完成后, 对bdHolder进行注册.
 				BeanDefinitionReaderUtils.registerBeanDefinition(bdHolder, getReaderContext().getRegistry());
 			}
 			catch (BeanDefinitionStoreException ex) {
@@ -399,6 +401,7 @@ Profile和Maven中的Profile类似,区分环境用的.
 						bdHolder.getBeanName() + "'", ele, ex);
 			}
 			// Send registration event.
+			//发出通知, 通知相关监听器, 这个bean已经加载完成了.
 			getReaderContext().fireComponentRegistered(new BeanComponentDefinition(bdHolder));
 		}
 	}
@@ -782,3 +785,178 @@ public Object parsePropertyValue(Element ele, BeanDefinition bd, String property
 	}
 ```
 spring支持的子元素已经全部在上面处理了.
+
+####  AbstractBeanDefinition属性
+
+经过上面一节复杂代码的处理, 完成了XML文档到GenericBeanDefinition的转化, 也就是说所有的XML配置都已经实例化为了GenericBeanDefinition的实例中的属性.
+其大部分属性(除了partnerName)均保存在AbstractBeanDefinition中, 重要的属性如下所示:
+```java
+//bean的作用范围, 对应bean的属性scope
+	private String scope = SCOPE_DEFAULT;
+//是否抽象, 对应bean的属性abstract
+	private boolean abstractFlag = false;
+//是否延迟加载, 对应bean的属性lazy-init
+	private boolean lazyInit = false;
+//自动注入模式, 对应bean属性autowire
+	private int autowireMode = AUTOWIRE_NO;
+//依赖检查, spring3.0之后弃用这个属性
+	private int dependencyCheck = DEPENDENCY_CHECK_NONE;
+//用来表示一个bean的实例化依靠另一个bean的实例化, 对应bean属性depend-on
+	private String[] dependsOn;
+	//该属性设置为false时, 容器在查找自动装配对象时, 将不考虑该bean
+	//也就是说这个bean不会被考虑作为其它bean自动装配的候选者, 但是该bean本身还是可以使用自动装配来注入其它bean的.
+	private boolean autowireCandidate = true;
+	//自动装配出现多个候选者时作为首选者, 对应bean属性primary.
+	private boolean primary = false;
+	//用来记录Qualifier, 对应子元素Qualifier
+	private final Map<String, AutowireCandidateQualifier> qualifiers = new LinkedHashMap<String, AutowireCandidateQualifier>(0);
+	//允许访问非公开的构造器和方法, 程序设置
+	private boolean nonPublicAccessAllowed = true;
+    //是否以一种宽松的模式解析构造函数, 默认为true;
+	private boolean lenientConstructorResolution = true;
+//记录构造函数注入属性, 对应bean属性constructor-arg
+	private ConstructorArgumentValues constructorArgumentValues;
+//普通属性集合
+	private MutablePropertyValues propertyValues;
+//方法重写持有者, 记录lookup-method, replaced-method元素
+	private MethodOverrides methodOverrides = new MethodOverrides();
+//对应bean属性factoryBean
+	private String factoryBeanName;
+//对应bean属性factory-method
+	private String factoryMethodName;
+//对应bean属性init-method
+	private String initMethodName;
+//对应bean属性destroy-method
+	private String destroyMethodName;
+//是否执行init-method, 程序设置
+	private boolean enforceInitMethod = true;
+//是否执行destroy-method, 程序设置
+	private boolean enforceDestroyMethod = true;
+
+	private boolean synthetic = false;
+	
+	private int role = BeanDefinition.ROLE_APPLICATION;
+//描述信息
+	private String description;
+//这个bean定义的
+	private Resource resource;		
+```
+#### 注册解析的beanDefinition
+
+对配置文件解析完成之后,获取的beanDefinition已经可以使用了, 剩下的工作就是开始注册, 也就是processBeanDefinition方法中的BeanDefinitionReaderUtils.registerBeanDefinition();
+其源代码如下所示:
+```java
+	/**
+	 * Register the given bean definition with the given bean factory.
+	 * @param definitionHolder the bean definition including name and aliases
+	 * @param registry the bean factory to register with
+	 * @throws BeanDefinitionStoreException if registration failed
+	 */
+	public static void registerBeanDefinition(
+			BeanDefinitionHolder definitionHolder, BeanDefinitionRegistry registry)
+			throws BeanDefinitionStoreException {
+
+		// Register bean definition under primary name.
+		String beanName = definitionHolder.getBeanName();
+		//根据beanName注册
+		registry.registerBeanDefinition(beanName, definitionHolder.getBeanDefinition());
+
+		// Register aliases for bean name, if any.
+		String[] aliases = definitionHolder.getAliases();
+		if (aliases != null) {
+		//根据别名注册
+			for (String aliase : aliases) {
+				registry.registerAlias(beanName, aliase);
+			}
+		}
+	}
+```
+
+对于根据beanName注册源代码如下, 具体是讲beanDefinition直接放入map中, 以beanName为key, 但是不仅仅如此:
+```java
+	@Override
+	public void registerBeanDefinition(String beanName, BeanDefinition beanDefinition)
+			throws BeanDefinitionStoreException {
+
+		Assert.hasText(beanName, "Bean name must not be empty");
+		Assert.notNull(beanDefinition, "BeanDefinition must not be null");
+
+		if (beanDefinition instanceof AbstractBeanDefinition) {
+			try {
+				((AbstractBeanDefinition) beanDefinition).validate();
+			}
+			catch (BeanDefinitionValidationException ex) {
+				throw new BeanDefinitionStoreException(beanDefinition.getResourceDescription(), beanName,
+						"Validation of bean definition failed", ex);
+			}
+		}
+
+		BeanDefinition oldBeanDefinition;
+
+//虽然beanDefinitionMap是concurrentHashMap, 但是下面代码中并非原子操作, 所以需要同步, 因为可能会并发访问.
+		synchronized (this.beanDefinitionMap) {
+			oldBeanDefinition = this.beanDefinitionMap.get(beanName);
+			if (oldBeanDefinition != null) {
+			//如果已经注册了这个beanname
+				if (!this.allowBeanDefinitionOverriding) {
+				//不允许覆盖,抛出异常
+					throw new BeanDefinitionStoreException(beanDefinition.getResourceDescription(), beanName,
+							"Cannot register bean definition [" + beanDefinition + "] for bean '" + beanName +
+							"': There is already [" + oldBeanDefinition + "] bound.");
+				}
+				else if (oldBeanDefinition.getRole() < beanDefinition.getRole()) {
+					// e.g. was ROLE_APPLICATION, now overriding with ROLE_SUPPORT or ROLE_INFRASTRUCTURE
+					if (this.logger.isWarnEnabled()) {
+						this.logger.warn("Overriding user-defined bean definition for bean '" + beanName +
+								" with a framework-generated bean definition ': replacing [" +
+								oldBeanDefinition + "] with [" + beanDefinition + "]");
+					}
+				}
+				else {
+					if (this.logger.isInfoEnabled()) {
+						this.logger.info("Overriding bean definition for bean '" + beanName +
+								"': replacing [" + oldBeanDefinition + "] with [" + beanDefinition + "]");
+					}
+				}
+			}
+			else {
+			//记录下要被注册的beanName
+				this.beanDefinitionNames.add(beanName);
+				this.frozenBeanDefinitionNames = null;
+			}
+			//注册beanDefinition
+			this.beanDefinitionMap.put(beanName, beanDefinition);
+		}
+
+		if (oldBeanDefinition != null || containsSingleton(beanName)) {
+		    //重置所有的beanname对应的缓存
+			resetBeanDefinition(beanName);
+		}
+	}
+```
+以下是通过别名注册BeanDefinition的源代码:
+```java
+	@Override
+	public void registerAlias(String name, String alias) {
+		Assert.hasText(name, "'name' must not be empty");
+		Assert.hasText(alias, "'alias' must not be empty");
+		//beanName和alias相同的话, 则不注册
+		if (alias.equals(name)) {
+			this.aliasMap.remove(alias);
+		}
+		else {
+		//如果alias不允许被覆盖, 则抛出异常, 这个参数其实就是allowBeanDefinitionOverriding
+			if (!allowAliasOverriding()) {
+				String registeredName = this.aliasMap.get(alias);
+				if (registeredName != null && !registeredName.equals(name)) {
+					throw new IllegalStateException("Cannot register alias '" + alias + "' for name '" +
+							name + "': It is already registered for name '" + registeredName + "'.");
+				}
+			}
+			//如果aliasMap中name已经对应了alias, 那就抛出异常
+			checkForAliasCircle(name, alias);
+			//注册alias
+			this.aliasMap.put(alias, name);
+		}
+	}
+```
