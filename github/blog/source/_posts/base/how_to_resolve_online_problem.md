@@ -51,3 +51,9 @@ jmap具有停止服务, 强制执行gc等功能, 对线上服务慎用.
 
 ### 打印信息含义
 具体请参考 [链接](http://11376164.blog.51cto.com/11366164/1795032)
+
+1. ESTABLISHED：(Connection established.)代表一个打开的连接
+2. TIME-WAIT：(In 2 MSL (twice the maximum segment length) quiet wait after close. )等待足够的时间以确保远程TCP接收到连接中断请求的确认 — 常见于客户端
+3. CLOSE-WAIT：等待从本地用户发来的连接中断请求，常见于服务端
+
+  
